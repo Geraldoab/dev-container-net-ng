@@ -1,5 +1,7 @@
+using Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+
 namespace backend.Controllers;
 
 [ApiController]
@@ -28,59 +30,32 @@ public class PedidosController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    public IActionResult DeletePedido(Guid id)
+    public async Task<IActionResult> DeletePedido(Guid id, CancellationToken token)
     {
-        var todosPedidos = _context.Pedidos.AsNoTracking().Include(x => x.Itens).ToList();
+        var pedidoAtual = await _context.Pedidos
+                                .Where(p => p.Id == id)
+                                .Include(x => x.Itens)
+                                .FirstOrDefaultAsync(token);
 
-        Pedido? pedidoAtual = null;
-        foreach(var pedido in todosPedidos)
-        {
-            if(pedido.Id.Equals(id))
-            {
-                pedidoAtual = pedido;
-            }
-        }
-
-        if (pedidoAtual == null)
-        {
+        if(pedidoAtual is null)
             return NotFound();
-        }
-        else
-        {
-            _context.Pedidos.RemoveRange(todosPedidos);
-            _context.SaveChanges();
 
-            todosPedidos.Remove(pedidoAtual);
-            _context.AddRange(todosPedidos);
-            _context.SaveChanges();
-            
-            return Ok();
-        }
+        _context.Pedidos.Remove(pedidoAtual);
+        await _context.SaveChangesAsync(token);
         
         return NoContent();
     }
 
     [HttpPost]
-    public async Task<IActionResult> CriarPedido([FromBody] PedidoDto dto)
+    public async Task<IActionResult> CriarPedido([FromBody] PedidoDto dto, [FromServices] IPedidoService pedidoService, CancellationToken token)
     {
-        if (dto.Itens == null || dto.Itens.Count == 0)
-            return BadRequest("O pedido deve ter ao menos 1 item.");
+        // Adicionar FluentValidation
+        // Criar baseController para simplicar os retornos
 
-        var pedido = new Pedido
-        {
-            Id = Guid.NewGuid(),
-            Data = new DateTime(),
-            Status = StatusPedido.NoCarrinho,
-            DescontoPercentual = dto.DescontoPercentual,
-            Itens = dto.Itens.Select(i => new ItemPedido
-            {
-                Nome = i.Nome,
-                Preco = i.Preco
-            }).ToList()
-        };
+        var response = await pedidoService.CriarPedidoAsync(dto, token);
+        if(!response.IsSuccess)
+            return BadRequest(response.Message);
 
-        _context.Pedidos.Add(pedido);
-        await _context.SaveChangesAsync();
         return Created();
     }
 
